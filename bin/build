@@ -60,7 +60,8 @@ surgeon
     'Router.prototype.insertEx',
     'Router.prototype.extend',
     'Router.prototype.runlist',
-    'Router.prototype.mount'
+    'Router.prototype.mount',
+    'Router.prototype.parseQuery'
   )
   //
   // Wrap everything that is in the current buffer with a

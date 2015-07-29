@@ -1,8 +1,8 @@
 
 
 //
-// Generated on Tue Dec 16 2014 12:13:47 GMT+0100 (CET) by Charlie Robbins, Paolo Fragomeni & the Contributors (Using Codesurgeon).
-// Version 1.2.6
+// Generated on Mon Jul 27 2015 23:40:23 GMT-0400 (EDT) by Charlie Robbins, Paolo Fragomeni & the Contributors (Using Codesurgeon).
+// Version 1.2.8
 //
 
 (function (exports) {
@@ -16,6 +16,7 @@
  */
 
 var dloc = document.location;
+var QUERY_SEPARATOR = /\?.*/;
 
 function dlocHashEmpty() {
   // Non-IE browsers return '' when the address bar shows '#'; Director's logic
@@ -27,6 +28,7 @@ var listener = {
   mode: 'modern',
   hash: dloc.hash,
   history: false,
+  skip: false,
 
   check: function () {
     var h = dloc.hash;
@@ -54,9 +56,12 @@ var listener = {
     }
 
     function onchange(onChangeEvent) {
-      for (var i = 0, l = Router.listeners.length; i < l; i++) {
-        Router.listeners[i](onChangeEvent);
+      if (!self.skip) {
+        for (var i = 0, l = Router.listeners.length; i < l; i++) {
+          Router.listeners[i](onChangeEvent);
+        }
       }
+      self.skip = false;
     }
 
     //note IE8 is being counted as 'modern' because it has the hashchange event
@@ -188,17 +193,18 @@ Router.prototype.init = function (r) {
 
   listener.init(this.handler, this.history);
 
+  var empty = dlocHashEmpty();
   if (this.history === false) {
-    if (dlocHashEmpty() && r) {
+    if (empty && r) {
       dloc.hash = r;
-    } else if (!dlocHashEmpty()) {
+    } else if (!empty) {
       self.dispatch('on', '/' + dloc.hash.replace(/^(#\/|#|\/)/, ''));
     }
   }
   else {
     if (this.convert_hash_in_init) {
       // Use hash as route
-      routeTo = dlocHashEmpty() && r ? r : !dlocHashEmpty() ? dloc.hash.replace(/^#/, '') : null;
+      routeTo = empty && r ? r : !empty ? dloc.hash.replace(/^#/, '') : null;
       if (routeTo) {
         window.history.replaceState({}, document.title, routeTo);
       }
@@ -218,25 +224,31 @@ Router.prototype.init = function (r) {
   return this;
 };
 
-Router.prototype.explode = function () {
-  var v = this.history === true ? this.getPath() : dloc.hash;
-  if (v.charAt(1) === '/') { v=v.slice(1) }
+Router.prototype.explode = function (stripQuery) {
+  var v = this.history === true
+    ? this.getPath()
+    : dloc.hash;
+  if (stripQuery === true) v = v.replace(QUERY_SEPARATOR, '');
+  if (v.charAt(1) === '/') v = v.slice(1);
   return v.slice(1, v.length).split("/");
 };
 
-Router.prototype.setRoute = function (i, v, val) {
+Router.prototype.setRoute = function (i, v, val, skip) {
   var url = this.explode();
 
   if (typeof i === 'number' && typeof v === 'string') {
     url[i] = v;
+    skip = val;
   }
   else if (typeof val === 'string') {
     url.splice(i, v, s);
   }
   else {
     url = [i];
+    skip = v;
   }
 
+  listener.skip = skip;
   listener.setHash(url.join('/'));
   return url;
 };
@@ -268,14 +280,14 @@ Router.prototype.getRoute = function (v) {
   var ret = v;
 
   if (typeof v === "number") {
-    ret = this.explode()[v];
+    ret = this.explode(true)[v];
   }
-  else if (typeof v === "string"){
-    var h = this.explode();
+  else if (typeof v === "string") {
+    var h = this.explode(true);
     ret = h.indexOf(v);
   }
   else {
-    ret = this.explode();
+    ret = this.explode(true);
   }
 
   return ret;
@@ -291,7 +303,7 @@ Router.prototype.getPath = function () {
   if (path.substr(0, 1) !== '/') {
     path = '/' + path;
   }
-  return path;
+  return path.replace(QUERY_SEPARATOR, '');
 };
 function _every(arr, iterator) {
   for (var i = 0; i < arr.length; i += 1) {
@@ -394,7 +406,7 @@ Router.prototype.configure = function(options) {
   for (var i = 0; i < this.methods.length; i++) {
     this._methods[this.methods[i]] = true;
   }
-  this.recurse = options.recurse || this.recurse || false;
+  this.recurse = typeof options.recurse === "undefined" ? this.recurse || false : options.recurse;
   this.async = options.async || false;
   this.delimiter = options.delimiter || "/";
   this.strict = typeof options.strict === "undefined" ? true : options.strict;
@@ -445,6 +457,7 @@ Router.prototype.on = Router.prototype.route = function(method, path, route) {
   path = path.split(new RegExp(this.delimiter));
   path = terminator(path, this.delimiter);
   this.insert(method, this.scope.concat(path), route);
+  return this;
 };
 
 Router.prototype.path = function(path, routesFn) {
@@ -457,10 +470,13 @@ Router.prototype.path = function(path, routesFn) {
   this.scope = this.scope.concat(path);
   routesFn.call(this, this);
   this.scope.splice(length, path.length);
+  return this;
 };
 
 Router.prototype.dispatch = function(method, path, callback) {
-  var self = this, fns = this.traverse(method, path.replace(QUERY_SEPARATOR, ""), this.routes, ""), invoked = this._invoked, after;
+  var query = this.parseQuery(path);
+  path = path.replace(QUERY_SEPARATOR, "");
+  var self = this, fns = this.traverse(method, path, this.routes, ""), invoked = this._invoked, after;
   this._invoked = true;
   if (!fns || fns.length === 0) {
     this.last = [];
@@ -472,6 +488,7 @@ Router.prototype.dispatch = function(method, path, callback) {
     }
     return false;
   }
+  this.query = query;
   if (this.recurse === "forward") {
     fns = fns.reverse();
   }
@@ -591,7 +608,7 @@ Router.prototype.traverse = function(method, path, routes, regexp, filter) {
           fns = fns.concat(next);
         }
         if (this.recurse) {
-          fns.push([ routes[r].before, routes[r].on ].filter(Boolean));
+          fns.push([ routes[r].before, routes[r][method] ].filter(Boolean));
           next.after = next.after.concat([ routes[r].after ].filter(Boolean));
           if (routes === this.routes) {
             fns.push([ routes["before"], routes["on"] ].filter(Boolean));
@@ -718,6 +735,30 @@ Router.prototype.mount = function(routes, path) {
       insertOrMount(route, path.slice(0));
     }
   }
+};
+
+Router.prototype.parseQuery = function(path) {
+  var match = path.match(QUERY_SEPARATOR);
+  if (!match) return null;
+  var query = match[0].substr(1), data = {}, decode = decodeURIComponent;
+  if (query.length) {
+    query.split(/&/g).forEach(function(part) {
+      var bits = part.split("="), key = decode(bits.shift()), value = bits.length ? decode(bits.join("=")) : true;
+      set(key, value);
+    });
+  }
+  function set(key, value) {
+    if (data.hasOwnProperty(key)) {
+      if (Array.isArray(data[key])) {
+        data[key].push(value);
+      } else {
+        data[key] = [ data[key], value ];
+      }
+    } else {
+      data[key] = value;
+    }
+  }
+  return data;
 };
 
 

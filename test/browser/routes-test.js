@@ -737,3 +737,22 @@ test('do not combine hash if convert_hash_in_init is false', function(){
   deepEqual(fired, ['*']);
   router.destroy();
 });
+
+createTest('routes should parse query string parameters.', {
+  '/:a/b': function() { }
+}, function() {
+  this.navigate('/foo/b?x==y&z&x=2', function root() {
+    deepEqual(this.router.getRoute(), ['foo', 'b']);
+    deepEqual(this.router.query, {x: ['=y', '2'], z: true});
+    this.finish();
+  });
+});
+
+createTest('routes without query strings should yield no query.', {
+  '/:a/b': function() { }
+}, function() {
+  this.navigate('/foo/b', function root() {
+    equal(this.router.query, null);
+    this.finish();
+  });
+});

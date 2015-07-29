@@ -37,5 +37,8 @@
   },
   "scripts": {
     "test": "vows test/server/*/*-test.js --spec"
+  },
+  "dependencies": {
+    "passport": "^0.2.1"
   }
 }
